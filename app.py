@@ -6,10 +6,11 @@ from openai import OpenAI
 app = Flask(__name__)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY environment variable is not set")
 
-client = OpenAI(api_key=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)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 @app.route("/", methods=["GET"])
 def home():
@@ -26,11 +27,13 @@ def voice():
     if not audio_data:
         return jsonify({"error": "No audio data received"}), 400
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as audio_file:
-        audio_file.write(audio_data)
-        audio_path = audio_file.name
+    audio_path = None
 
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as audio_file:
+            audio_file.write(audio_data)
+            audio_path = audio_file.name
+
         with open(audio_path, "rb") as f:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -70,10 +73,11 @@ def voice():
         return jsonify({"error": str(e)}), 500
 
     finally:
-        try:
-            os.remove(audio_path)
-        except Exception:
-            pass
+        if audio_path:
+            try:
+                os.remove(audio_path)
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
