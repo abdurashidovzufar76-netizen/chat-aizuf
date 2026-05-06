@@ -9,62 +9,72 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY environment variable is not set")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=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)
 
 @app.route("/", methods=["GET"])
 def home():
-    return "ESP32 Voice AI Server is working!"
+    return "ESP32 AI Voice Server is running"
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"})
 
 @app.route("/voice", methods=["POST"])
 def voice():
+    audio_data = request.data
+
+    if not audio_data:
+        return jsonify({"error": "No audio data received"}), 400
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as audio_file:
+        audio_file.write(audio_data)
+        audio_path = audio_file.name
+
     try:
-        audio_bytes = request.get_data()
-        if not audio_bytes:
-            return jsonify({"error": "No audio data received"}), 400
-
-        # ESP32 sends WAV bytes. Save as temporary WAV file for Whisper.
-
-        audio_path = None
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                tmp.write(audio_bytes)
-                audio_path = tmp.name
-
-            with open(audio_path, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="uz"
-                )
-
-            user_text = transcript.text.strip()
-            if not user_text:
-                user_text = "Foydalanuvchi ovozi tushunilmadi."
-
-            chat = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Sen ESP32 TFT ekranida ishlaydigan qisqa, aniq va o'zbekcha javob beradigan AI assistentsan. Javobni 2-4 qatorda, juda uzun qilma."
-                    },
-                    {"role": "user", "content": user_text}
-                ],
-                max_tokens=180
+        with open(audio_path, "rb") as f:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=f
             )
 
-            answer = chat.choices[0].message.content.strip()
-            return jsonify({"text": user_text, "answer": answer})
-        finally:
-            if audio_path and os.path.exists(audio_path):
-                try:
-                    os.remove(audio_path)
-                except Exception:
-                    pass
+        user_text = transcript.text.strip()
+
+        if not user_text:
+            return jsonify({
+                "text": "",
+                "answer": "Ovoz tushunilmadi. Iltimos, qayta gapiring."
+            })
+
+        chat_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Sen ESP32 TFT ekrani uchun qisqa, aniq va o'zbekcha javob beradigan AI assistantsan. Javoblarni 2-4 qatordan oshirma."
+                },
+                {
+                    "role": "user",
+                    "content": user_text
+                }
+            ]
+        )
+
+        answer = chat_response.choices[0].message.content.strip()
+
+        return jsonify({
+            "text": user_text,
+            "answer": answer
+        })
 
     except Exception as e:
-        return jsonify({"error": "Ichki server xatosi yuz berdi."}), 500
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        try:
+            os.remove(audio_path)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
